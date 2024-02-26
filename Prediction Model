@@ -1,0 +1,105 @@
+# Import necessary libraries
+import pandas as pd
+from sklearn.linear_model import Ridge
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+
+# Load the weather data
+weather = pd.read_csv("weather.csv", index_col="DATE")
+
+# Select only the columns with less than 50% null values
+valid_columns = weather.columns[weather.isnull().mean() < 0.5]
+weather = weather[valid_columns].copy()
+
+# Convert column names to lowercase
+weather.columns = weather.columns.str.lower()
+
+# Forward fill to handle missing data
+weather = weather.ffill()
+
+# Convert the index to datetime
+weather.index = pd.to_datetime(weather.index)
+
+# Shift the 'tmax' column by -1 to create the target variable
+weather["target"] = weather["tmax"].shift(-1)
+
+# Forward fill to handle any remaining missing data
+weather = weather.ffill()
+
+# Initialize the Ridge regression model
+rr = Ridge(alpha=.1)
+
+# Define the predictors
+predictors = weather.columns[~weather.columns.isin(["target", "name", "station"])]
+
+# Define the backtest function
+def backtest(data, model, predictors):
+    # Split the data into training and testing sets
+    train = data[data.index.year < 1990]
+    test = data[data.index.year >= 1990]
+
+    # Fit the model
+    model.fit(train[predictors], train["target"])
+
+    # Make predictions
+    predictions = model.predict(test[predictors])
+
+    # Return the actual and predicted values as a DataFrame
+    return pd.DataFrame({"actual": test["target"], "prediction": predictions, "diff": abs(test["target"] - predictions)})
+
+# Use the backtest function to make predictions
+predictions = backtest(weather, rr, predictors)
+
+# Calculate the mean absolute error
+mae = mean_absolute_error(predictions["actual"], predictions["prediction"])
+print(f"Mean Absolute Error: {mae}")
+
+# Calculate the mean squared error
+mse = mean_squared_error(predictions["actual"], predictions["prediction"])
+print(f"Mean Squared Error: {mse}")
+
+# Sort the predictions by the absolute difference between actual and predicted values
+sorted_predictions = predictions.sort_values("diff", ascending=False)
+
+# Print the sorted predictions
+print(sorted_predictions)
+
+# Print the coefficients of the Ridge regression model
+print(pd.Series(rr.coef_, index=predictors))
+
+# Filter the weather data to remove the first 14 rows
+weather = weather.iloc[14:,:]
+
+# Fill any remaining missing data with 0
+weather = weather.fillna(0)
+
+# Redefine the predictors
+predictors = weather.columns[~weather.columns.isin(["target", "name", "station"])]
+
+# Use the backtest function to make predictions again
+predictions = backtest(weather, rr, predictors)
+
+# Calculate and print the mean absolute error again
+mae = mean_absolute_error(predictions["actual"], predictions["prediction"])
+print(f"Mean Absolute Error: {mae}")
+
+# Calculate and print the mean squared error again
+mse = mean_squared_error(predictions["actual"], predictions["prediction"])
+print(f"Mean Squared Error: {mse}")
+
+# Sort the predictions by the absolute difference between actual and predicted values again
+sorted_predictions = predictions.sort_values("diff", ascending=False)
+
+# Print the sorted predictions again
+print(sorted_predictions)
+
+# Filter the weather data for a specific date range
+filtered_weather = weather.loc["1990-03-07": "1995-03-07"]
+
+# Print the filtered weather data
+print(filtered_weather)
+
+# Plot the distribution of prediction differences
+(predictions["diff"].round().value_counts().sort_index() / predictions.shape[0]).plot()
+
+# Print the final predictions
+print(predictions)
